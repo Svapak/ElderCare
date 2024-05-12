@@ -10,22 +10,27 @@ import android.util.Base64
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.ViewModelProvider
 import com.bumptech.glide.Glide
 import com.explore.eldercare.databinding.FragmentHomeBinding
+import com.explore.eldercare.ml.DementiaFloat32
+import com.explore.eldercare.ml.EyeDisFloat32
+import com.explore.eldercare.ml.KoaFloat32
 import com.explore.eldercare.ml.ModelFloat32
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import org.tensorflow.lite.DataType
 import org.tensorflow.lite.support.common.ops.NormalizeOp
 import org.tensorflow.lite.support.image.ImageProcessor
 import org.tensorflow.lite.support.image.TensorImage
 import org.tensorflow.lite.support.image.ops.ResizeOp
 import org.tensorflow.lite.support.image.ops.ResizeWithCropOrPadOp
-import org.tensorflow.lite.support.image.ops.TransformToGrayscaleOp
 import org.tensorflow.lite.support.tensorbuffer.TensorBuffer
 import retrofit2.Call
 import retrofit2.Callback
@@ -70,29 +75,102 @@ class HomeFragment : Fragment() {
 
         }
 
-        binding.btnSend.setOnClickListener {
+        binding.btnKoa.setOnClickListener {
             GlobalScope.launch {
-                val model = context?.let { it1 -> ModelFloat32.newInstance(it1) }
-                val inputStream: InputStream? = requireContext().contentResolver.openInputStream(uri!!)
+                val model = KoaFloat32.newInstance(requireContext())
+                val inputStream: InputStream? =
+                    requireContext().contentResolver.openInputStream(uri!!)
                 val bitmap = BitmapFactory.decodeStream(inputStream)
                 val imageProcessor = ImageProcessor.Builder()
-                    .add(ResizeOp(256,256,ResizeOp.ResizeMethod.BILINEAR))
-                    .add(ResizeWithCropOrPadOp(224,224))
-                    //.add(TransformToGrayscaleOp())
-                    .add(NormalizeOp(0.224f, 0.456f)
+                    //.add(ResizeOp(256,256,ResizeOp.ResizeMethod.NEAREST_NEIGHBOR))
+                    .add(ResizeWithCropOrPadOp(224, 224))
+                    //.add(NormalizeOp(0.224f, 0.456f))
+                    .build()
 
-                )
+                var tensorImage = TensorImage(DataType.FLOAT32)
+                tensorImage.load(bitmap)
+                tensorImage = imageProcessor.process(tensorImage)
+                val inputFeature0 =
+                    TensorBuffer.createFixedSize(intArrayOf(1, 224, 224, 3), DataType.FLOAT32)
+                inputFeature0.loadBuffer(tensorImage.buffer)
+                val outputs = model.process(inputFeature0)
+                val outputFeature0 = outputs.outputFeature0AsTensorBuffer.floatArray
+                val maxi = outputFeature0.max()
+                val list = listOf("Normal","Mild Arthritis","Severe Arthritis")
+                for(i in 0..2){
+                    if(outputFeature0[i]==maxi){
+                        withContext(Dispatchers.Main) {
+                            Toast.makeText(requireContext(), list[i], Toast.LENGTH_SHORT).show()
+                        }
+                        break
+                    }
+                }
+                model.close()
+            }
+        }
+
+        binding.btnEye.setOnClickListener {
+            GlobalScope.launch {
+                val model = EyeDisFloat32.newInstance(requireContext())
+                val inputStream: InputStream? =
+                    requireContext().contentResolver.openInputStream(uri!!)
+                val bitmap = BitmapFactory.decodeStream(inputStream)
+                val imageProcessor = ImageProcessor.Builder()
+                    //.add(ResizeOp(256,256,ResizeOp.ResizeMethod.NEAREST_NEIGHBOR))
+                    .add(ResizeWithCropOrPadOp(224, 224))
+                    //.add(NormalizeOp(0.224f, 0.456f))
+                    .build()
+
+                var tensorImage = TensorImage(DataType.FLOAT32)
+                tensorImage.load(bitmap)
+                tensorImage = imageProcessor.process(tensorImage)
+                val inputFeature0 =
+                    TensorBuffer.createFixedSize(intArrayOf(1, 224, 224, 3), DataType.FLOAT32)
+                inputFeature0.loadBuffer(tensorImage.buffer)
+                val outputs = model.process(inputFeature0)
+                val outputFeature0 = outputs.outputFeature0AsTensorBuffer.floatArray
+                val maxi = outputFeature0.max()
+                val list = listOf("Normal", "Diabetes", "Cataract", "Glucoama")
+                for (i in 0..3) {
+                    if (outputFeature0[i] == maxi) {
+                        withContext(Dispatchers.Main) {
+                            Toast.makeText(requireContext(), list[i], Toast.LENGTH_SHORT).show()
+                        }
+
+                        break
+                    }
+                }
+                model.close()
+
+            }
+        }
+
+        binding.btnTb.setOnClickListener {
+            GlobalScope.launch {
+                val model = context?.let { it1 -> ModelFloat32.newInstance(it1) }
+                val inputStream: InputStream? =
+                    requireContext().contentResolver.openInputStream(uri!!)
+                val bitmap = BitmapFactory.decodeStream(inputStream)
+                val imageProcessor = ImageProcessor.Builder()
+                    .add(ResizeOp(256, 256, ResizeOp.ResizeMethod.BILINEAR))
+                    .add(ResizeWithCropOrPadOp(224, 224))
+                    //.add(TransformToGrayscaleOp())
+                    .add(
+                        NormalizeOp(0.224f, 0.456f)
+
+                    )
                     .build()
 
                 var tensorImage = TensorImage(DataType.FLOAT32)
                 tensorImage.load(bitmap)
                 tensorImage = imageProcessor.process(tensorImage)
                 println(tensorImage.colorSpaceType)
-                val inputFeature0 = TensorBuffer.createFixedSize(intArrayOf(1, 224, 224, 3), DataType.FLOAT32)
+                val inputFeature0 =
+                    TensorBuffer.createFixedSize(intArrayOf(1, 224, 224, 3), DataType.FLOAT32)
                 inputFeature0.loadBuffer(tensorImage.buffer)
                 val outputs = model?.process(inputFeature0)
                 val outputFeature0 = outputs?.outputFeature0AsTensorBuffer?.floatArray
-                val num= outputFeature0?.first()
+                val num = outputFeature0?.first()
 
                 println(activationFunction(num!!.toDouble()))
                 model.close()
@@ -107,6 +185,42 @@ class HomeFragment : Fragment() {
 //                Log.i("data","done")
 //                sendImageToServer(base64Image)
 //            }
+        }
+
+        binding.btnDementia.setOnClickListener {
+            GlobalScope.launch {
+                val model = DementiaFloat32.newInstance(requireContext())
+                val inputStream: InputStream? =
+                    requireContext().contentResolver.openInputStream(uri!!)
+                val bitmap = BitmapFactory.decodeStream(inputStream)
+                val imageProcessor = ImageProcessor.Builder()
+                    .add(ResizeOp(256, 256, ResizeOp.ResizeMethod.BILINEAR))
+                    .add(ResizeWithCropOrPadOp(224, 224))
+                    //.add(TransformToGrayscaleOp())
+                    .add(
+                        NormalizeOp(0.224f, 0.456f)
+
+                    )
+                    .build()
+
+                var tensorImage = TensorImage(DataType.FLOAT32)
+                tensorImage.load(bitmap)
+                tensorImage = imageProcessor.process(tensorImage)
+                val inputFeature0 =
+                    TensorBuffer.createFixedSize(intArrayOf(1, 224, 224, 3), DataType.FLOAT32)
+                inputFeature0.loadBuffer(tensorImage.buffer)
+                val outputs = model.process(inputFeature0)
+                val outputFeature0 = outputs.outputFeature0AsTensorBuffer.floatArray
+                val maxi = outputFeature0.max()
+                withContext(Dispatchers.Main) {
+                    if (outputFeature0[0] == maxi) {
+                        Toast.makeText(requireContext(), "NO DEMENTIA", Toast.LENGTH_SHORT).show()
+                    } else {
+                        Toast.makeText(requireContext(), "DEMENTIA", Toast.LENGTH_SHORT).show()
+                    }
+                }
+                model.close()
+            }
         }
 
 
@@ -162,7 +276,7 @@ class HomeFragment : Fragment() {
         private const val BASE_URL = "http://127.0.0.1:5003/"
 
         val apiService: ApiService by lazy {
-            val retrofit =Retrofit.Builder()
+            val retrofit = Retrofit.Builder()
                 .baseUrl(BASE_URL)
                 .addConverterFactory(GsonConverterFactory.create())
                 .build()
